@@ -1,0 +1,6 @@
+{
+  "name": "Portfolio Intelligence Dashboard",
+  "description": "Professional portfolio analytics and data visualization platform with AI-powered insights, real-time metrics, and sector breakdowns.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
