@@ -7,37 +7,48 @@ interface AuthContextType {
   token: string | null;
   loading: boolean;
   login: (email: string, pass: string) => Promise<void>;
-  signup: (name: string, email: string, pass: string) => Promise<void>;
+  signup: (name: string, email: string, pass: string, profile?: Partial<User>) => Promise<void>;
+  loginDemo: () => Promise<void>;
   logout: () => void;
+  updateProfile: (updates: Partial<User>) => Promise<User>;
   openAuthModal: (mode?: 'login' | 'signup') => void;
   authModalOpen: boolean;
   authMode: 'login' | 'signup';
   closeAuthModal: () => void;
+  accountModalOpen: boolean;
+  openAccountModal: () => void;
+  closeAccountModal: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>({
-    id: 'usr_demo',
-    email: 'investor@example.com',
-    name: 'Alex Morgan',
-    createdAt: new Date().toISOString()
-  });
-  const [token, setToken] = useState<string | null>(localStorage.getItem('portfolio_token') || 'token_investor@example.com');
-  const [loading, setLoading] = useState<boolean>(false);
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('portfolio_token'));
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
+  const [accountModalOpen, setAccountModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const existingToken = localStorage.getItem('portfolio_token');
     if (existingToken) {
       setToken(existingToken);
       api.getCurrentUser()
-        .then((u) => setUser(u))
+        .then((u) => {
+          setUser(u);
+        })
         .catch(() => {
-          // keep demo user if backend session check defaults
+          // If token is invalid or expired, clear it
+          localStorage.removeItem('portfolio_token');
+          setToken(null);
+          setUser(null);
+        })
+        .finally(() => {
+          setLoading(false);
         });
+    } else {
+      setLoading(false);
     }
   }, []);
 
@@ -54,10 +65,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signup = async (name: string, email: string, pass: string) => {
+  const signup = async (name: string, email: string, pass: string, profile?: Partial<User>) => {
     setLoading(true);
     try {
-      const res = await api.signup(name, email, pass);
+      const res = await api.signup(name, email, pass, profile);
       setUser(res.user);
       setToken(res.token);
       localStorage.setItem('portfolio_token', res.token);
@@ -67,10 +78,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginDemo = async () => {
+    setLoading(true);
+    try {
+      const res = await api.login('investor@example.com', 'password123');
+      setUser(res.user);
+      setToken(res.token);
+      localStorage.setItem('portfolio_token', res.token);
+      setAuthModalOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateProfile = async (updates: Partial<User>): Promise<User> => {
+    const updated = await api.updateProfile(updates);
+    setUser(updated);
+    return updated;
+  };
+
   const logout = () => {
     setUser(null);
     setToken(null);
     localStorage.removeItem('portfolio_token');
+    setAccountModalOpen(false);
   };
 
   const openAuthModal = (mode: 'login' | 'signup' = 'login') => {
@@ -82,6 +113,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthModalOpen(false);
   };
 
+  const openAccountModal = () => {
+    setAccountModalOpen(true);
+  };
+
+  const closeAccountModal = () => {
+    setAccountModalOpen(false);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -90,11 +129,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         login,
         signup,
+        loginDemo,
         logout,
+        updateProfile,
         openAuthModal,
         authModalOpen,
         authMode,
-        closeAuthModal
+        closeAuthModal,
+        accountModalOpen,
+        openAccountModal,
+        closeAccountModal
       }}
     >
       {children}

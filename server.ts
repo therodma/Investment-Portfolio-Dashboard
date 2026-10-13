@@ -32,16 +32,19 @@ function getGeminiClient(): GoogleGenAI | null {
   return aiClient;
 }
 
-// Simple bearer token mock validation
-function getUserIdFromReq(req: Request): string {
+// Token validation helper
+function getUserIdFromReq(req: Request): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer token_')) {
-    const email = authHeader.replace('Bearer token_', '');
-    const user = db.findUserByEmail(email);
-    if (user) return user.id;
+    const tokenPayload = authHeader.replace('Bearer token_', '');
+    // Try by ID first
+    const userById = db.findUserById(tokenPayload);
+    if (userById) return userById.id;
+    // Try by email
+    const userByEmail = db.findUserByEmail(tokenPayload);
+    if (userByEmail) return userByEmail.id;
   }
-  // Default to demo user for frictionless usage
-  return 'usr_demo';
+  return null;
 }
 
 // -------------------------------------------------------------
@@ -50,7 +53,7 @@ function getUserIdFromReq(req: Request): string {
 
 // 1. Authentication APIs
 app.post('/api/auth/signup', (req: Request, res: Response) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, cashBalance, currency, riskTolerance, investmentGoal, bio, targetHorizon } = req.body;
   if (!name || !email || !password) {
     res.status(400).json({ error: 'Name, email, and password are required.' });
     return;
@@ -58,12 +61,20 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
 
   const existing = db.findUserByEmail(email);
   if (existing) {
-    res.status(400).json({ error: 'User with this email already exists.' });
+    res.status(400).json({ error: 'An account with this email already exists.' });
     return;
   }
 
-  const user = db.createUser(name, email, password);
-  const token = `token_${user.email}`;
+  const user = db.createUser(name, email, password, {
+    cashBalance: typeof cashBalance === 'number' ? cashBalance : 10000,
+    currency: currency || 'USD',
+    riskTolerance: riskTolerance || 'Moderate',
+    investmentGoal: investmentGoal || 'Long-term Growth',
+    bio: bio || '',
+    targetHorizon: targetHorizon || '10+ Years'
+  });
+
+  const token = `token_${user.id}`;
   res.json({ user, token });
 });
 
@@ -80,30 +91,74 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
     return;
   }
 
-  const token = `token_${user.email}`;
+  const token = `token_${user.id}`;
   res.json({ user, token });
 });
 
-app.get('/api/auth/me', async (req: Request, res: Response) => {
+app.get('/api/auth/me', (req: Request, res: Response) => {
   const userId = getUserIdFromReq(req);
-  const portfolios = await db.getUserPortfolios(userId);
-  if (!portfolios.length) {
+  if (!userId) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  const user = db.findUserById(userId);
+  if (!user) {
     res.status(404).json({ error: 'User not found' });
     return;
   }
-  const user = db.findUserByEmail(portfolios[0].userId === 'usr_demo' ? 'investor@example.com' : 'investor@example.com') || {
-    id: userId,
-    email: 'investor@example.com',
-    name: 'Alex Morgan',
-    createdAt: new Date().toISOString()
-  };
   res.json({ user });
+});
+
+app.put('/api/auth/profile', (req: Request, res: Response) => {
+  const userId = getUserIdFromReq(req);
+  if (!userId) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  const { name, email, cashBalance, currency, riskTolerance, investmentGoal, bio, targetHorizon } = req.body;
+  
+  if (email) {
+    const existing = db.findUserByEmail(email);
+    if (existing && existing.id !== userId) {
+      res.status(400).json({ error: 'This email is already taken by another account.' });
+      return;
+    }
+  }
+
+  const updatedUser = db.updateUserProfile(userId, {
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(typeof cashBalance === 'number' ? { cashBalance } : {}),
+    ...(currency ? { currency } : {}),
+    ...(riskTolerance ? { riskTolerance } : {}),
+    ...(investmentGoal ? { investmentGoal } : {}),
+    ...(bio !== undefined ? { bio } : {}),
+    ...(targetHorizon ? { targetHorizon } : {})
+  });
+
+  if (!updatedUser) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  res.json({ user: updatedUser });
 });
 
 // 2. Portfolio Management APIs
 app.get('/api/portfolios', async (req: Request, res: Response) => {
   const userId = getUserIdFromReq(req);
-  const userPortfolios = await db.getUserPortfolios(userId);
+  if (!userId) {
+    res.json([]);
+    return;
+  }
+  let userPortfolios = await db.getUserPortfolios(userId);
+  if (userPortfolios.length === 0) {
+    const user = db.findUserById(userId);
+    const portName = user ? `${user.name}'s Portfolio` : 'Personal Portfolio';
+    const newPort = db.createPortfolio(userId, portName);
+    userPortfolios = [newPort];
+  }
   res.json(userPortfolios);
 });
 

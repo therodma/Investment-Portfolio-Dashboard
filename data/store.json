@@ -1,0 +1,35 @@
+{
+  "users": [
+    {
+      "id": "usr_demo",
+      "email": "investor@example.com",
+      "name": "Alex Morgan",
+      "createdAt": "2026-10-13T06:25:22.863Z",
+      "cashBalance": 25000,
+      "currency": "USD",
+      "riskTolerance": "Moderate",
+      "investmentGoal": "Long-term Growth",
+      "bio": "Tech enthusiast and long-term index accumulator.",
+      "targetHorizon": "10+ Years"
+    }
+  ],
+  "passwords": {
+    "investor@example.com": "password123"
+  },
+  "portfolios": [
+    {
+      "id": "p_demo",
+      "userId": "usr_demo",
+      "name": "Core Portfolio",
+      "holdings": [],
+      "totalValue": 0,
+      "totalCost": 0,
+      "totalGainLoss": 0,
+      "totalGainLossPercent": 0,
+      "dailyGainLoss": 0,
+      "dailyGainLossPercent": 0,
+      "holdingsCount": 0,
+      "updatedAt": "2026-10-13T06:25:22.864Z"
+    }
+  ]
+}

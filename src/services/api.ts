@@ -9,11 +9,11 @@ function getAuthHeader(): Record<string, string> {
 
 export const api = {
   // Auth Services
-  async signup(name: string, email: string, pass: string): Promise<AuthResponse> {
+  async signup(name: string, email: string, pass: string, profile?: Partial<User>): Promise<AuthResponse> {
     const res = await fetch(`${API_BASE}/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password: pass })
+      body: JSON.stringify({ name, email, password: pass, ...profile })
     });
     if (!res.ok) {
       const err = await res.json();
@@ -41,6 +41,23 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error('Not authenticated');
+    }
+    const data = await res.json();
+    return data.user;
+  },
+
+  async updateProfile(updates: Partial<User>): Promise<User> {
+    const res = await fetch(`${API_BASE}/auth/profile`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader()
+      },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to update profile');
     }
     const data = await res.json();
     return data.user;

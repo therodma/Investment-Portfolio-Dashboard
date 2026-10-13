@@ -1,5 +1,7 @@
 import { Holding, Portfolio, StockDetail, User } from '../src/types.js';
 import { fetchLiveMarketStock } from './stockFetcher.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // Pre-populated market tickers database with detailed financial metrics
 export const MARKET_STOCKS: Record<string, StockDetail> = {
@@ -380,39 +382,95 @@ export const MARKET_STOCKS: Record<string, StockDetail> = {
   }
 };
 
-// In-Memory Database Store
-const users: User[] = [
-  {
-    id: 'usr_demo',
-    email: 'investor@example.com',
-    name: 'Alex Morgan',
-    createdAt: new Date().toISOString()
+// File-backed persistent Database Store
+const DATA_DIR = path.resolve(process.cwd(), 'data');
+const STORE_FILE = path.join(DATA_DIR, 'store.json');
+
+interface DatabaseStore {
+  users: User[];
+  passwords: Record<string, string>;
+  portfolios: Portfolio[];
+}
+
+function initAndLoadStore(): DatabaseStore {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (fs.existsSync(STORE_FILE)) {
+      const data = fs.readFileSync(STORE_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed.users) && parsed.passwords && Array.isArray(parsed.portfolios)) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.error('Error loading persistent store:', err);
   }
-];
 
-const passwords: Record<string, string> = {
-  'investor@example.com': 'password123'
-};
+  const defaultStore: DatabaseStore = {
+    users: [
+      {
+        id: 'usr_demo',
+        email: 'investor@example.com',
+        name: 'Alex Morgan',
+        createdAt: new Date().toISOString(),
+        cashBalance: 25000,
+        currency: 'USD',
+        riskTolerance: 'Moderate',
+        investmentGoal: 'Long-term Growth',
+        bio: 'Tech enthusiast and long-term index accumulator.',
+        targetHorizon: '10+ Years'
+      }
+    ],
+    passwords: {
+      'investor@example.com': 'password123'
+    },
+    portfolios: [
+      {
+        id: 'p_demo',
+        userId: 'usr_demo',
+        name: 'Core Portfolio',
+        holdings: [],
+        totalValue: 0,
+        totalCost: 0,
+        totalGainLoss: 0,
+        totalGainLossPercent: 0,
+        dailyGainLoss: 0,
+        dailyGainLossPercent: 0,
+        holdingsCount: 0,
+        updatedAt: new Date().toISOString()
+      }
+    ]
+  };
 
-// Seed portfolio for Alex Morgan (Starts with 0 holdings)
-const initialHoldings: Holding[] = [];
-
-const portfolios: Portfolio[] = [
-  {
-    id: 'p_demo',
-    userId: 'usr_demo',
-    name: 'Core Portfolio',
-    holdings: [],
-    totalValue: 0,
-    totalCost: 0,
-    totalGainLoss: 0,
-    totalGainLossPercent: 0,
-    dailyGainLoss: 0,
-    dailyGainLossPercent: 0,
-    holdingsCount: 0,
-    updatedAt: new Date().toISOString()
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(STORE_FILE, JSON.stringify(defaultStore, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error writing default store:', err);
   }
-];
+
+  return defaultStore;
+}
+
+const store = initAndLoadStore();
+const users: User[] = store.users;
+const passwords: Record<string, string> = store.passwords;
+const portfolios: Portfolio[] = store.portfolios;
+
+function persistStore() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(STORE_FILE, JSON.stringify({ users, passwords, portfolios }, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to persist store:', err);
+  }
+}
 
 // Helper functions for portfolio math recalculation
 export function recalculatePortfolio(portfolio: Portfolio): Portfolio {
@@ -486,16 +544,27 @@ export function recalculatePortfolio(portfolio: Portfolio): Portfolio {
 
 // Database helper functions
 export const db = {
+  findUserById: (id: string): User | null => {
+    return users.find((u) => u.id === id) || null;
+  },
+
   findUserByEmail: (email: string): User | null => {
     return users.find((u) => u.email.toLowerCase() === email.toLowerCase()) || null;
   },
 
-  createUser: (name: string, email: string, pass: string): User => {
+  createUser: (name: string, email: string, pass: string, profile?: Partial<User>): User => {
     const newUser: User = {
       id: `usr_${Date.now()}`,
       name,
       email: email.toLowerCase(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      cashBalance: typeof profile?.cashBalance === 'number' ? profile.cashBalance : 10000,
+      currency: profile?.currency || 'USD',
+      riskTolerance: profile?.riskTolerance || 'Moderate',
+      investmentGoal: profile?.investmentGoal || 'Long-term Growth',
+      bio: profile?.bio || '',
+      targetHorizon: profile?.targetHorizon || '10+ Years',
+      ...profile
     };
     users.push(newUser);
     passwords[email.toLowerCase()] = pass;
@@ -504,7 +573,7 @@ export const db = {
     const newPortfolio: Portfolio = recalculatePortfolio({
       id: `p_${Date.now()}`,
       userId: newUser.id,
-      name: `${name}'s Core Portfolio`,
+      name: `${name}'s Portfolio`,
       holdings: [],
       totalValue: 0,
       totalCost: 0,
@@ -517,7 +586,55 @@ export const db = {
     });
     portfolios.push(newPortfolio);
 
+    persistStore();
     return newUser;
+  },
+
+  updateUserProfile: (userId: string, updates: Partial<User>): User | null => {
+    const index = users.findIndex((u) => u.id === userId);
+    if (index === -1) return null;
+
+    const current = users[index];
+    const oldEmail = current.email.toLowerCase();
+
+    // If email is changing, update passwords lookup key
+    if (updates.email && updates.email.toLowerCase() !== oldEmail) {
+      const newEmail = updates.email.toLowerCase();
+      if (passwords[oldEmail]) {
+        passwords[newEmail] = passwords[oldEmail];
+        delete passwords[oldEmail];
+      }
+    }
+
+    users[index] = {
+      ...current,
+      ...updates,
+      id: current.id, // ID cannot be changed
+      createdAt: current.createdAt // createdAt cannot be changed
+    };
+
+    persistStore();
+    return users[index];
+  },
+
+  createPortfolio: (userId: string, name: string): Portfolio => {
+    const newPortfolio: Portfolio = recalculatePortfolio({
+      id: `p_${Date.now()}`,
+      userId,
+      name,
+      holdings: [],
+      totalValue: 0,
+      totalCost: 0,
+      totalGainLoss: 0,
+      totalGainLossPercent: 0,
+      dailyGainLoss: 0,
+      dailyGainLossPercent: 0,
+      holdingsCount: 0,
+      updatedAt: new Date().toISOString()
+    });
+    portfolios.push(newPortfolio);
+    persistStore();
+    return newPortfolio;
   },
 
   verifyPassword: (email: string, pass: string): boolean => {
@@ -635,6 +752,7 @@ export const db = {
     }
 
     portfolios[portIndex] = recalculatePortfolio(portfolios[portIndex]);
+    persistStore();
     return newHolding;
   },
 
@@ -660,6 +778,7 @@ export const db = {
     portfolios[portIndex].holdings[holdingIndex].purchasePrice = purchasePrice;
 
     portfolios[portIndex] = recalculatePortfolio(portfolios[portIndex]);
+    persistStore();
     return true;
   },
 
@@ -669,6 +788,7 @@ export const db = {
 
     portfolios[portIndex].holdings = portfolios[portIndex].holdings.filter((h) => h.id !== holdingId);
     portfolios[portIndex] = recalculatePortfolio(portfolios[portIndex]);
+    persistStore();
     return true;
   },
 

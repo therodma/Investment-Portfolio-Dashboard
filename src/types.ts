@@ -3,6 +3,12 @@ export interface User {
   email: string;
   name: string;
   createdAt: string;
+  cashBalance?: number;
+  currency?: string;
+  riskTolerance?: 'Conservative' | 'Moderate' | 'Aggressive';
+  investmentGoal?: 'Long-term Growth' | 'Dividend Income' | 'Capital Preservation' | 'Aggressive Growth';
+  bio?: string;
+  targetHorizon?: string;
 }
 
 export interface Holding {
