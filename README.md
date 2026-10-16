@@ -1,5 +1,7 @@
 # Portfolio Intelligence Dashboard
 
+> 🌐 **Live Demo:** [https://ais-pre-l7twyehgmtb54sdiprh54c-263800642829.us-east5.run.app](https://ais-pre-l7twyehgmtb54sdiprh54c-263800642829.us-east5.run.app)
+
 A full-stack, professional investment portfolio management and analytics platform with real-time market data quotes, interactive data visualisations, and AI-powered portfolio insights powered by Google Gemini.
 
 ---
