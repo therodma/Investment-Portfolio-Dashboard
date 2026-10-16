@@ -22,15 +22,28 @@ export const api = {
     return res.json();
   },
 
-  async login(email: string, pass: string): Promise<AuthResponse> {
+  async login(identifier: string, pass: string): Promise<AuthResponse> {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pass })
+      body: JSON.stringify({ identifier, email: identifier, password: pass })
     });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error || 'Login failed');
+    }
+    return res.json();
+  },
+
+  async resetPassword(identifier: string, newPassword: string): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, newPassword })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Password reset failed');
     }
     return res.json();
   },

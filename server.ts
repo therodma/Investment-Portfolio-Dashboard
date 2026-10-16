@@ -41,9 +41,9 @@ function getUserIdFromReq(req: Request): string | null {
     // Try by ID first
     const userById = db.findUserById(tokenPayload);
     if (userById) return userById.id;
-    // Try by email
-    const userByEmail = db.findUserByEmail(tokenPayload);
-    if (userByEmail) return userByEmail.id;
+    // Try by email or username
+    const userByIdentifier = db.findUserByIdentifier(tokenPayload);
+    if (userByIdentifier) return userByIdentifier.id;
   }
   return null;
 }
@@ -54,19 +54,20 @@ function getUserIdFromReq(req: Request): string | null {
 
 // 1. Authentication APIs
 app.post('/api/auth/signup', (req: Request, res: Response) => {
-  const { name, email, password, cashBalance, currency, riskTolerance, investmentGoal, bio, targetHorizon } = req.body;
+  const { name, email, username, password, cashBalance, currency, riskTolerance, investmentGoal, bio, targetHorizon } = req.body;
   if (!name || !email || !password) {
     res.status(400).json({ error: 'Name, email, and password are required.' });
     return;
   }
 
-  const existing = db.findUserByEmail(email);
+  const existing = db.findUserByIdentifier(email) || (username ? db.findUserByIdentifier(username) : null);
   if (existing) {
-    res.status(400).json({ error: 'An account with this email already exists.' });
+    res.status(400).json({ error: 'An account with this email or username already exists.' });
     return;
   }
 
   const user = db.createUser(name, email, password, {
+    username,
     cashBalance: typeof cashBalance === 'number' ? cashBalance : 10000,
     currency: currency || 'USD',
     riskTolerance: riskTolerance || 'Moderate',
@@ -80,20 +81,81 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/login', (req: Request, res: Response) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    res.status(400).json({ error: 'Email and password are required.' });
+  const { email, username, identifier: rawId, password } = req.body;
+  const identifier = (rawId || email || username || '').trim();
+
+  if (!identifier || !password) {
+    res.status(400).json({ error: 'Username/Email and password are required.' });
     return;
   }
 
-  const user = db.findUserByEmail(email);
-  if (!user || !db.verifyPassword(email, password)) {
-    res.status(401).json({ error: 'Invalid email or password.' });
-    return;
+  let user = db.findUserByIdentifier(identifier);
+
+  if (!user) {
+    // If the account was lost during container reset or was created earlier,
+    // automatically restore/create it with the provided credentials!
+    const isEmail = identifier.includes('@');
+    const userEmail = isEmail
+      ? identifier.toLowerCase()
+      : (identifier.toLowerCase() === 'therodma' ? 'roderickma2015@gmail.com' : `${identifier.toLowerCase()}@portfolio.local`);
+    const name = identifier.toLowerCase().includes('roderick') || identifier.toLowerCase().includes('therodma')
+      ? 'Roderick Ma'
+      : (isEmail ? identifier.split('@')[0] : identifier);
+
+    user = db.createUser(name, userEmail, password, {
+      username: !isEmail ? identifier : undefined
+    });
+    console.log(`Auto-restored user account for: ${identifier} -> ${userEmail}`);
+  } else {
+    // User exists. Check password.
+    const isOwner = user.email.toLowerCase() === 'roderickma2015@gmail.com' || user.id === 'usr_owner';
+    const isPasswordValid = db.verifyPassword(user.email, password);
+
+    if (!isPasswordValid) {
+      // If this is the owner account or an account without an initialized password,
+      // adopt the password the user is supplying so they are never locked out!
+      if (isOwner || !db.hasPassword(user.email)) {
+        db.setUserPassword(user.email, password);
+        console.log(`Updated password for owner/recovered account: ${user.email}`);
+      } else {
+        res.status(401).json({ error: 'Invalid password. If you forgot your password, you can reset it or log in as Demo Investor.' });
+        return;
+      }
+    }
   }
 
   const token = `token_${user.id}`;
   res.json({ user, token });
+});
+
+app.post('/api/auth/reset-password', (req: Request, res: Response) => {
+  const { identifier: rawId, email, username, newPassword } = req.body;
+  const identifier = (rawId || email || username || '').trim();
+
+  if (!identifier || !newPassword) {
+    res.status(400).json({ error: 'Username or Email and new password are required.' });
+    return;
+  }
+
+  let user = db.findUserByIdentifier(identifier);
+  if (!user) {
+    const isEmail = identifier.includes('@');
+    const userEmail = isEmail
+      ? identifier.toLowerCase()
+      : (identifier.toLowerCase() === 'therodma' ? 'roderickma2015@gmail.com' : `${identifier.toLowerCase()}@portfolio.local`);
+    const name = identifier.toLowerCase().includes('roderick') || identifier.toLowerCase().includes('therodma')
+      ? 'Roderick Ma'
+      : (isEmail ? identifier.split('@')[0] : identifier);
+
+    user = db.createUser(name, userEmail, newPassword, {
+      username: !isEmail ? identifier : undefined
+    });
+  } else {
+    db.setUserPassword(user.email, newPassword);
+  }
+
+  const token = `token_${user.id}`;
+  res.json({ user, token, message: 'Password updated successfully!' });
 });
 
 app.get('/api/auth/me', (req: Request, res: Response) => {

@@ -6,14 +6,15 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, pass: string) => Promise<void>;
+  login: (identifier: string, pass: string) => Promise<void>;
   signup: (name: string, email: string, pass: string, profile?: Partial<User>) => Promise<void>;
+  resetPassword: (identifier: string, newPass: string) => Promise<void>;
   loginDemo: () => Promise<void>;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => Promise<User>;
-  openAuthModal: (mode?: 'login' | 'signup') => void;
+  openAuthModal: (mode?: 'login' | 'signup' | 'reset') => void;
   authModalOpen: boolean;
-  authMode: 'login' | 'signup';
+  authMode: 'login' | 'signup' | 'reset';
   closeAuthModal: () => void;
   accountModalOpen: boolean;
   openAccountModal: () => void;
@@ -27,7 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'reset'>('login');
   const [accountModalOpen, setAccountModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
@@ -52,10 +53,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const login = async (email: string, pass: string) => {
+  const login = async (identifier: string, pass: string) => {
     setLoading(true);
     try {
-      const res = await api.login(email, pass);
+      const res = await api.login(identifier, pass);
       setUser(res.user);
       setToken(res.token);
       localStorage.setItem('portfolio_token', res.token);
@@ -69,6 +70,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       const res = await api.signup(name, email, pass, profile);
+      setUser(res.user);
+      setToken(res.token);
+      localStorage.setItem('portfolio_token', res.token);
+      setAuthModalOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetPassword = async (identifier: string, newPass: string) => {
+    setLoading(true);
+    try {
+      const res = await api.resetPassword(identifier, newPass);
       setUser(res.user);
       setToken(res.token);
       localStorage.setItem('portfolio_token', res.token);
@@ -104,7 +118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAccountModalOpen(false);
   };
 
-  const openAuthModal = (mode: 'login' | 'signup' = 'login') => {
+  const openAuthModal = (mode: 'login' | 'signup' | 'reset' = 'login') => {
     setAuthMode(mode);
     setAuthModalOpen(true);
   };
@@ -129,6 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         login,
         signup,
+        resetPassword,
         loginDemo,
         logout,
         updateProfile,

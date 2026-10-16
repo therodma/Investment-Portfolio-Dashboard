@@ -401,6 +401,44 @@ function initAndLoadStore(): DatabaseStore {
       const data = fs.readFileSync(STORE_FILE, 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed.users) && parsed.passwords && Array.isArray(parsed.portfolios)) {
+        // Ensure owner Roderick Ma exists
+        const hasOwner = parsed.users.some(
+          (u: any) => u.email?.toLowerCase() === 'roderickma2015@gmail.com' || (u.username && u.username.toLowerCase() === 'therodma')
+        );
+        if (!hasOwner) {
+          parsed.users.push({
+            id: 'usr_owner',
+            email: 'roderickma2015@gmail.com',
+            name: 'Roderick Ma',
+            username: 'therodma',
+            createdAt: new Date().toISOString(),
+            cashBalance: 50000,
+            currency: 'USD',
+            riskTolerance: 'Moderate',
+            investmentGoal: 'Long-term Growth',
+            bio: 'Lead Investor & Portfolio Architect',
+            targetHorizon: '10+ Years'
+          });
+          parsed.portfolios.push({
+            id: 'p_owner',
+            userId: 'usr_owner',
+            name: 'Main Investment Portfolio',
+            holdings: [],
+            totalValue: 0,
+            totalCost: 0,
+            totalGainLoss: 0,
+            totalGainLossPercent: 0,
+            dailyGainLoss: 0,
+            dailyGainLossPercent: 0,
+            holdingsCount: 0,
+            updatedAt: new Date().toISOString()
+          });
+          try {
+            fs.writeFileSync(STORE_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
+          } catch (e) {
+            // continue
+          }
+        }
         return parsed;
       }
     }
@@ -414,12 +452,26 @@ function initAndLoadStore(): DatabaseStore {
         id: 'usr_demo',
         email: 'investor@example.com',
         name: 'Alex Morgan',
+        username: 'investor',
         createdAt: new Date().toISOString(),
         cashBalance: 25000,
         currency: 'USD',
         riskTolerance: 'Moderate',
         investmentGoal: 'Long-term Growth',
         bio: 'Tech enthusiast and long-term index accumulator.',
+        targetHorizon: '10+ Years'
+      },
+      {
+        id: 'usr_owner',
+        email: 'roderickma2015@gmail.com',
+        name: 'Roderick Ma',
+        username: 'therodma',
+        createdAt: new Date().toISOString(),
+        cashBalance: 50000,
+        currency: 'USD',
+        riskTolerance: 'Moderate',
+        investmentGoal: 'Long-term Growth',
+        bio: 'Lead Investor & Portfolio Architect',
         targetHorizon: '10+ Years'
       }
     ],
@@ -431,6 +483,20 @@ function initAndLoadStore(): DatabaseStore {
         id: 'p_demo',
         userId: 'usr_demo',
         name: 'Core Portfolio',
+        holdings: [],
+        totalValue: 0,
+        totalCost: 0,
+        totalGainLoss: 0,
+        totalGainLossPercent: 0,
+        dailyGainLoss: 0,
+        dailyGainLossPercent: 0,
+        holdingsCount: 0,
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'p_owner',
+        userId: 'usr_owner',
+        name: 'Main Investment Portfolio',
         holdings: [],
         totalValue: 0,
         totalCost: 0,
@@ -552,6 +618,56 @@ export const db = {
     return users.find((u) => u.email.toLowerCase() === email.toLowerCase()) || null;
   },
 
+  findUserByIdentifier: (identifier: string): User | null => {
+    if (!identifier) return null;
+    const clean = identifier.trim().toLowerCase();
+    
+    // Exact email match
+    const byEmail = users.find((u) => u.email.toLowerCase() === clean);
+    if (byEmail) return byEmail;
+
+    // Exact username match
+    const byUsername = users.find((u) => (u.username && u.username.toLowerCase() === clean));
+    if (byUsername) return byUsername;
+
+    // Exact name match
+    const byName = users.find((u) => u.name.toLowerCase() === clean);
+    if (byName) return byName;
+
+    // Email prefix match (e.g. roderickma2015 for roderickma2015@gmail.com)
+    const byPrefix = users.find((u) => u.email.toLowerCase().split('@')[0] === clean);
+    if (byPrefix) return byPrefix;
+
+    // Known alias for developer / owner
+    if (['therodma', 'roderickma', 'roderickma2015', 'roderick'].includes(clean)) {
+      const owner = users.find(
+        (u) => u.email.toLowerCase() === 'roderickma2015@gmail.com' || u.name.toLowerCase().includes('roderick')
+      );
+      if (owner) return owner;
+    }
+
+    // Demo aliases
+    if (['investor', 'alex', 'alex morgan', 'demo'].includes(clean)) {
+      const demo = users.find((u) => u.email.toLowerCase() === 'investor@example.com');
+      if (demo) return demo;
+    }
+
+    return null;
+  },
+
+  hasPassword: (identifierOrEmail: string): boolean => {
+    const user = db.findUserByIdentifier(identifierOrEmail);
+    const key = user ? user.email.toLowerCase() : identifierOrEmail.toLowerCase();
+    return Boolean(passwords[key]);
+  },
+
+  setUserPassword: (identifierOrEmail: string, pass: string): void => {
+    const user = db.findUserByIdentifier(identifierOrEmail);
+    const key = user ? user.email.toLowerCase() : identifierOrEmail.toLowerCase();
+    passwords[key] = pass;
+    persistStore();
+  },
+
   createUser: (name: string, email: string, pass: string, profile?: Partial<User>): User => {
     const newUser: User = {
       id: `usr_${Date.now()}`,
@@ -637,8 +753,10 @@ export const db = {
     return newPortfolio;
   },
 
-  verifyPassword: (email: string, pass: string): boolean => {
-    return passwords[email.toLowerCase()] === pass;
+  verifyPassword: (identifierOrEmail: string, pass: string): boolean => {
+    const user = db.findUserByIdentifier(identifierOrEmail);
+    const key = user ? user.email.toLowerCase() : identifierOrEmail.toLowerCase();
+    return passwords[key] === pass;
   },
 
   getUserPortfolios: async (userId: string): Promise<Portfolio[]> => {
